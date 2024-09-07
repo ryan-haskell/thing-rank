@@ -14,24 +14,31 @@ module Ranking exposing
 
 -}
 
+import Array exposing (Array)
 import NumberLine exposing (NumberLine)
 
 
 {-| choices = [A,B,C]
 -}
-type alias Ranking =
+type alias Ranking choice =
     { size : Int
-    , remaining : List String
-    , line : NumberLine String
-    , comparing : String
+    , fallback : choice
+    , array : Array choice
+    , remaining : List Index
+    , line : NumberLine Index
+    , comparing : Index
     , bounds :
-        { rightOf : Maybe String
-        , leftOf : Maybe String
+        { rightOf : Maybe Index
+        , leftOf : Maybe Index
         }
     }
 
 
-init : List String -> Result String Ranking
+type alias Index =
+    Int
+
+
+init : List choice -> Result String (Ranking choice)
 init choices =
     case choices of
         [] ->
@@ -40,39 +47,52 @@ init choices =
         firstItem :: [] ->
             Err "Lists with one item are already sorted"
 
-        firstItem :: secondItem :: rest ->
+        firstItem :: _ ->
+            let
+                size : Int
+                size =
+                    List.length choices
+            in
             Ok
-                { size = List.length choices
-                , remaining = rest
+                { size = size
+                , fallback = firstItem
+                , array = Array.fromList choices
+                , remaining = List.range 2 (size - 1)
                 , line =
                     NumberLine.empty
-                        |> NumberLine.pushStart firstItem
-                , comparing = secondItem
+                        |> NumberLine.pushStart 0
+                , comparing = 1
                 , bounds = { rightOf = Nothing, leftOf = Nothing }
                 }
 
 
-insertLikesLessThan : String -> Ranking -> Ranking
-insertLikesLessThan value ranking =
+insertLikesLessThan : choice -> Ranking choice -> Ranking choice
+insertLikesLessThan choice ranking =
     let
         bounds =
             ranking.bounds
+
+        index =
+            toIndex choice ranking.array
     in
-    { ranking | bounds = { bounds | leftOf = Just value } }
+    { ranking | bounds = { bounds | leftOf = index } }
         |> attemptToResolve
 
 
-insertLikesMoreThan : String -> Ranking -> Ranking
-insertLikesMoreThan value ranking =
+insertLikesMoreThan : choice -> Ranking choice -> Ranking choice
+insertLikesMoreThan choice ranking =
     let
         bounds =
             ranking.bounds
+
+        index =
+            toIndex choice ranking.array
     in
-    { ranking | bounds = { bounds | rightOf = Just value } }
+    { ranking | bounds = { bounds | rightOf = index } }
         |> attemptToResolve
 
 
-attemptToResolve : Ranking -> Ranking
+attemptToResolve : Ranking choice -> Ranking choice
 attemptToResolve ranking =
     case
         NumberLine.getItemInMiddle
@@ -82,7 +102,7 @@ attemptToResolve ranking =
     of
         Nothing ->
             let
-                rankingWithNewComparing : Ranking
+                rankingWithNewComparing : Ranking choice
                 rankingWithNewComparing =
                     case ranking.remaining of
                         [] ->
@@ -115,37 +135,71 @@ attemptToResolve ranking =
             ranking
 
 
-type Status
-    = Finished (List String)
-    | VotingOn ( String, String )
+type Status choice
+    = Finished (List choice)
+    | VotingOn ( choice, choice )
 
 
-toStatus : Ranking -> Status
+toStatus : Ranking choice -> Status choice
 toStatus ranking =
     if ranking.size == NumberLine.size ranking.line then
-        Finished (NumberLine.toListFromRightToLeft ranking.line)
+        Finished
+            (ranking.line
+                |> NumberLine.toListFromRightToLeft
+                |> List.filterMap (\i -> Array.get i ranking.array)
+            )
 
     else
+        let
+            currentChoice : choice
+            currentChoice =
+                ranking.array
+                    |> Array.get ranking.comparing
+                    |> Maybe.withDefault ranking.fallback
+        in
         case
             NumberLine.getItemInMiddle
                 ranking.bounds.rightOf
                 ranking.bounds.leftOf
                 ranking.line
         of
-            Just otherChoice ->
-                VotingOn ( ranking.comparing, otherChoice )
+            Just otherChoiceIndex ->
+                let
+                    otherChoice : choice
+                    otherChoice =
+                        ranking.array
+                            |> Array.get otherChoiceIndex
+                            |> Maybe.withDefault ranking.fallback
+                in
+                VotingOn ( currentChoice, otherChoice )
 
             Nothing ->
                 -- Note: This should only happen if "attemptToResolve" is not
                 -- called after insertion!
-                VotingOn ( ranking.comparing, ranking.comparing )
+                VotingOn ( currentChoice, currentChoice )
 
 
 {-| This tells the user how many items have been placed so far on the ranking timeline–
 but the number of remaining votes depends on their rankings so far.
 -}
-toProgress : Ranking -> ( Int, Int )
+toProgress : Ranking choice -> ( Int, Int )
 toProgress ranking =
     ( NumberLine.size ranking.line
     , ranking.size
     )
+
+
+toIndex : choice -> Array choice -> Maybe Int
+toIndex choice array =
+    let
+        findIndex idx =
+            if idx >= Array.length array then
+                Nothing
+
+            else if Array.get idx array == Just choice then
+                Just idx
+
+            else
+                findIndex (idx + 1)
+    in
+    findIndex 0

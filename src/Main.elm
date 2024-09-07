@@ -20,7 +20,7 @@ main =
 
 
 type alias Model =
-    { ranking : Result (List Choice) Ranking
+    { ranking : Result (List Choice) (Ranking Choice)
     , votes : Int
     }
 
