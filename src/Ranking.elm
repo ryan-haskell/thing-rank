@@ -14,7 +14,7 @@ module Ranking exposing
 
 -}
 
-import DoubleLinkedList exposing (DoubleLinkedList)
+import NumberLine exposing (NumberLine)
 
 
 {-| choices = [A,B,C]
@@ -22,28 +22,31 @@ import DoubleLinkedList exposing (DoubleLinkedList)
 type alias Ranking =
     { size : Int
     , remaining : List String
-    , dll : DoubleLinkedList String
+    , line : NumberLine String
     , comparing : String
-    , bounds : { rightOf : Maybe String, leftOf : Maybe String }
+    , bounds :
+        { rightOf : Maybe String
+        , leftOf : Maybe String
+        }
     }
 
 
-init : List String -> Result (List String) Ranking
+init : List String -> Result String Ranking
 init choices =
     case choices of
         [] ->
-            Err choices
+            Err "Cannot sort an empty list"
 
-        first :: [] ->
-            Err choices
+        firstItem :: [] ->
+            Err "Lists with one item are already sorted"
 
         firstItem :: secondItem :: rest ->
             Ok
                 { size = List.length choices
                 , remaining = rest
-                , dll =
-                    DoubleLinkedList.empty
-                        |> DoubleLinkedList.pushStart firstItem
+                , line =
+                    NumberLine.empty
+                        |> NumberLine.pushStart firstItem
                 , comparing = secondItem
                 , bounds = { rightOf = Nothing, leftOf = Nothing }
                 }
@@ -72,10 +75,10 @@ insertLikesMoreThan value ranking =
 attemptToResolve : Ranking -> Ranking
 attemptToResolve ranking =
     case
-        DoubleLinkedList.getItemBetween
+        NumberLine.getItemInMiddle
             ranking.bounds.rightOf
             ranking.bounds.leftOf
-            ranking.dll
+            ranking.line
     of
         Nothing ->
             let
@@ -95,17 +98,17 @@ attemptToResolve ranking =
             case ( ranking.bounds.leftOf, ranking.bounds.rightOf ) of
                 ( Just leftOf, _ ) ->
                     { rankingWithNewComparing
-                        | dll = DoubleLinkedList.insertLeftOf leftOf ranking.comparing ranking.dll
+                        | line = NumberLine.insertLeftOf leftOf ranking.comparing ranking.line
                     }
 
                 ( _, Just rightOf ) ->
                     { rankingWithNewComparing
-                        | dll = DoubleLinkedList.insertRightOf rightOf ranking.comparing ranking.dll
+                        | line = NumberLine.insertRightOf rightOf ranking.comparing ranking.line
                     }
 
                 ( Nothing, Nothing ) ->
                     { rankingWithNewComparing
-                        | dll = DoubleLinkedList.pushStart ranking.comparing ranking.dll
+                        | line = NumberLine.pushStart ranking.comparing ranking.line
                     }
 
         Just otherChoice ->
@@ -119,15 +122,15 @@ type Status
 
 toStatus : Ranking -> Status
 toStatus ranking =
-    if ranking.size == DoubleLinkedList.size ranking.dll then
-        Finished (DoubleLinkedList.toList ranking.dll)
+    if ranking.size == NumberLine.size ranking.line then
+        Finished (NumberLine.toListFromRightToLeft ranking.line)
 
     else
         case
-            DoubleLinkedList.getItemBetween
+            NumberLine.getItemInMiddle
                 ranking.bounds.rightOf
                 ranking.bounds.leftOf
-                ranking.dll
+                ranking.line
         of
             Just otherChoice ->
                 VotingOn ( ranking.comparing, otherChoice )
@@ -143,6 +146,6 @@ but the number of remaining votes depends on their rankings so far.
 -}
 toProgress : Ranking -> ( Int, Int )
 toProgress ranking =
-    ( DoubleLinkedList.size ranking.dll
+    ( NumberLine.size ranking.line
     , ranking.size
     )
